@@ -5,12 +5,17 @@
         WindowStyle="SingleBorderWindow"
         ResizeMode="CanResize"
         AllowsTransparency="False"
-        WindowStartupLocation="CenterScreen"
-        Width="1560"
-        Height="940"
-        MinWidth="1240"
-        MinHeight="760"
-        Background="#0F1115">
+        WindowStartupLocation="Manual"
+        Left="80"
+        Top="60"
+        Width="1550"
+        Height="930"
+        MinWidth="1120"
+        MinHeight="700"
+        Background="#0F1115"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        PreviewKeyDown="Window_PreviewKeyDown">
     <Window.Resources>
         <SolidColorBrush x:Key="AppBgBrush" Color="#0F1115"/>
         <SolidColorBrush x:Key="PanelBgBrush" Color="#171B22"/>
@@ -18,6 +23,7 @@
         <SolidColorBrush x:Key="BorderBrushSubtle" Color="#303848"/>
         <SolidColorBrush x:Key="TextPrimaryBrush" Color="#E8ECF2"/>
         <SolidColorBrush x:Key="TextSecondaryBrush" Color="#AFB8C5"/>
+        <SolidColorBrush x:Key="AccentLineBrush" Color="#7CB8FF"/>
 
         <Style x:Key="FlatPanelBorderStyle" TargetType="Border">
             <Setter Property="Background" Value="{StaticResource PanelBgBrush}"/>
@@ -65,6 +71,41 @@
             <Setter Property="AlternationCount" Value="2"/>
         </Style>
 
+        <Style x:Key="LineMonitorListBoxStyle" TargetType="ListBox">
+            <Setter Property="Background" Value="#10161E"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrushSubtle}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+            <Setter Property="FontFamily" Value="Consolas"/>
+            <Setter Property="FontSize" Value="12.5"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        </Style>
+
+        <Style TargetType="ListBoxItem">
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0,0,0,1"/>
+            <Setter Property="BorderBrush" Value="#1D2633"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}">
+                            <ContentPresenter/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#18212C"/>
+                </Trigger>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="#22344A"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
         <Style TargetType="DataGridColumnHeader">
             <Setter Property="Background" Value="#232C3A"/>
             <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
@@ -103,14 +144,17 @@
         </Style>
     </Window.Resources>
 
-    <Grid Background="{StaticResource AppBgBrush}">
+    <Grid x:Name="MainLayoutGrid" Background="{StaticResource AppBgBrush}">
+        <Grid.LayoutTransform>
+            <ScaleTransform x:Name="MainLayoutScaleTransform" ScaleX="1" ScaleY="1"/>
+        </Grid.LayoutTransform>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
-            <RowDefinition Height="6"/>
-            <RowDefinition Height="140"/>
+            <RowDefinition x:Name="StatusSplitterRow" Height="6"/>
+            <RowDefinition x:Name="StatusHistoryRow" Height="140"/>
         </Grid.RowDefinitions>
 
         <Border Grid.Row="0" Background="{StaticResource HeaderBgBrush}" BorderBrush="{StaticResource BorderBrushSubtle}" BorderThickness="0,0,0,1" Padding="14,10">
@@ -140,8 +184,12 @@
         <Border Grid.Row="1" Background="#1A222E" BorderBrush="{StaticResource BorderBrushSubtle}" BorderThickness="0,0,0,1" Padding="10,8">
             <DockPanel>
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+                    <Button Content="Connection Setup" Style="{StaticResource AnalyzerButtonStyle}" Click="ConnectionSetupButton_Click"/>
                     <Button Content="Start Session" Style="{StaticResource AnalyzerButtonStyle}" Click="StartSessionButton_Click"/>
                     <Button Content="Load Sample" Style="{StaticResource AnalyzerButtonStyle}" Click="LoadSampleButton_Click"/>
+                    <Button Content="Save Capture Data" Style="{StaticResource AnalyzerButtonStyle}" Click="SaveCaptureButton_Click"/>
+                    <Button Content="Open Capture Data" Style="{StaticResource AnalyzerButtonStyle}" Click="OpenCaptureButton_Click"/>
+                    <Button Content="Export Data" Style="{StaticResource AnalyzerButtonStyle}" Click="ExportDataButton_Click"/>
                 </StackPanel>
                 <TextBlock Text="{Binding TrafficSummaryText}" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" HorizontalAlignment="Right"/>
             </DockPanel>
@@ -171,37 +219,40 @@
 
         <Grid Grid.Row="3" Margin="10,10,10,10">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="1.35*"/>
+                <ColumnDefinition Width="1.10*"/>
                 <ColumnDefinition Width="8"/>
-                <ColumnDefinition Width="1*"/>
+                <ColumnDefinition Width="1.75*"/>
             </Grid.ColumnDefinitions>
 
             <Border Grid.Column="0" Style="{StaticResource FlatPanelBorderStyle}">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
                     <StackPanel Margin="0,0,0,10">
                         <TextBlock Text="Line Monitor" Style="{StaticResource PanelTitleStyle}"/>
-                        <TextBlock Text="Raw data translated into DNP3 transport, application, object, and semantic summaries" Style="{StaticResource PanelSubtitleStyle}"/>
+                        <TextBlock Text="Protocol trace text-list agar detail frame terbaca jelas seperti protocol tester industrial" Style="{StaticResource PanelSubtitleStyle}" TextWrapping="Wrap"/>
                     </StackPanel>
-                    <DataGrid Grid.Row="1" Style="{StaticResource AnalyzerDataGridStyle}" AutoGenerateColumns="False" ItemsSource="{Binding TrafficFrames}" FontSize="12">
-                        <DataGrid.Columns>
-                            <DataGridTextColumn Header="Time" Binding="{Binding TimestampText}" Width="105"/>
-                            <DataGridTextColumn Header="Dir" Binding="{Binding Direction}" Width="48"/>
-                            <DataGridTextColumn Header="Src" Binding="{Binding Source}" Width="82"/>
-                            <DataGridTextColumn Header="Dst" Binding="{Binding Destination}" Width="82"/>
-                            <DataGridTextColumn Header="Function" Binding="{Binding FunctionCode}" Width="145"/>
-                            <DataGridTextColumn Header="Object" Binding="{Binding ObjectSummary}" Width="170"/>
-                            <DataGridTextColumn Header="Semantic" Binding="{Binding SemanticTag}" Width="110"/>
-                            <DataGridTextColumn Header="Transport" Binding="{Binding Transport}" Width="110"/>
-                            <DataGridTextColumn Header="App Ctrl" Binding="{Binding ApplicationControl}" Width="115"/>
-                            <DataGridTextColumn Header="IIN" Binding="{Binding IinSummary}" Width="120"/>
-                            <DataGridTextColumn Header="Summary" Binding="{Binding Summary}" Width="220"/>
-                            <DataGridTextColumn Header="Raw Hex" Binding="{Binding RawHex}" Width="*"/>
-                        </DataGrid.Columns>
-                    </DataGrid>
+                    <DockPanel Grid.Row="1" Margin="0,0,0,8">
+                        <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+                            <TextBlock Text="Line Mode" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <ComboBox x:Name="LineMonitorModeCombo" Width="150" SelectedIndex="0" SelectionChanged="LineMonitorModeCombo_SelectionChanged">
+                                <ComboBoxItem Content="Semantic"/>
+                                <ComboBoxItem Content="RAW Classic"/>
+                            </ComboBox>
+                        </StackPanel>
+                    </DockPanel>
+                    <ListBox Grid.Row="2" ItemsSource="{Binding LineMonitorEntries}" Style="{StaticResource LineMonitorListBoxStyle}" ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Border BorderBrush="{StaticResource AccentLineBrush}" BorderThickness="2,0,0,0" Padding="8,6,6,6">
+                                    <TextBlock Text="{Binding}" TextWrapping="Wrap" FontFamily="Consolas" Foreground="{StaticResource TextPrimaryBrush}" LineHeight="18"/>
+                                </Border>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
                 </Grid>
             </Border>
 
@@ -211,13 +262,24 @@
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
                     <StackPanel Margin="0,0,0,10">
                         <TextBlock Text="Analyzer Views" Style="{StaticResource PanelTitleStyle}"/>
-                        <TextBlock Text="Measurement view, event log, findings, and protocol context in one operator workspace" Style="{StaticResource PanelSubtitleStyle}"/>
+                        <TextBlock Text="Measurement view, event log, findings, protocol context, dan legend dengan prioritas ruang utama untuk analisis operator" Style="{StaticResource PanelSubtitleStyle}" TextWrapping="Wrap"/>
                     </StackPanel>
-                    <TabControl Grid.Row="1" Background="#131820" BorderBrush="{StaticResource BorderBrushSubtle}">
+                    <DockPanel Grid.Row="1" Margin="0,0,0,8">
+                        <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+                            <TextBlock Text="Measurement View" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <ComboBox x:Name="MeasurementModeCombo" Width="150" SelectedIndex="0" SelectionChanged="MeasurementModeCombo_SelectionChanged">
+                                <ComboBoxItem Content="Structured"/>
+                                <ComboBoxItem Content="Flat"/>
+                                <ComboBoxItem Content="Timeline"/>
+                            </ComboBox>
+                        </StackPanel>
+                    </DockPanel>
+                    <TabControl Grid.Row="2" Background="#131820" BorderBrush="{StaticResource BorderBrushSubtle}">
                         <TabItem Header="Measurement View">
                             <DataGrid Style="{StaticResource AnalyzerDataGridStyle}" AutoGenerateColumns="False" ItemsSource="{Binding Points}" FontSize="12">
                                 <DataGrid.Columns>
@@ -263,7 +325,16 @@
                                 <DataGrid.Columns>
                                     <DataGridTextColumn Header="Parameter" Binding="{Binding Parameter}" Width="160"/>
                                     <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="*"/>
-                                    <DataGridTextColumn Header="Updated" Binding="{Binding Updated}" Width="100"/>
+                                    <DataGridTextColumn Header="Updated" Binding="{Binding Updated}" Width="140"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </TabItem>
+                        <TabItem Header="Glossary / Legend">
+                            <DataGrid Style="{StaticResource AnalyzerDataGridStyle}" AutoGenerateColumns="False" ItemsSource="{Binding GlossaryItems}" FontSize="12">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Group" Binding="{Binding Parameter}" Width="120"/>
+                                    <DataGridTextColumn Header="Code" Binding="{Binding Value}" Width="180"/>
+                                    <DataGridTextColumn Header="Meaning" Binding="{Binding Updated}" Width="*"/>
                                 </DataGrid.Columns>
                             </DataGrid>
                         </TabItem>
@@ -272,27 +343,28 @@
             </Border>
         </Grid>
 
-        <GridSplitter Grid.Row="4" Height="6" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Background="#2D3545"/>
+        <GridSplitter Grid.Row="4" x:Name="StatusGridSplitter" Height="6" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Background="#2D3545"/>
 
-        <Border Grid.Row="5" Margin="10,0,10,10" Style="{StaticResource FlatPanelBorderStyle}">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                </Grid.RowDefinitions>
-                <StackPanel Margin="0,0,0,8">
-                    <TextBlock Text="Status History" Style="{StaticResource PanelTitleStyle}"/>
-                    <TextBlock Text="Session milestones, capture workflow, parser state, and analyzer notes" Style="{StaticResource PanelSubtitleStyle}"/>
-                </StackPanel>
-                <DataGrid Grid.Row="1" Style="{StaticResource AnalyzerDataGridStyle}" AutoGenerateColumns="False" ItemsSource="{Binding StatusHistory}" FontSize="11">
+        <Expander Grid.Row="5" x:Name="StatusHistoryExpander" ExpandDirection="Up" IsExpanded="False" Expanded="StatusHistoryExpander_Expanded" Collapsed="StatusHistoryExpander_Collapsed" Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrushSubtle}" BorderThickness="1" Margin="10,0,10,10">
+            <Expander.Header>
+                <DockPanel LastChildFill="False" Margin="4">
+                    <TextBlock Text="Status History" Foreground="{StaticResource TextPrimaryBrush}" FontSize="12" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                    <Border Background="#1E3B60" BorderBrush="#4F7AA8" BorderThickness="1" CornerRadius="9" Padding="8,2" Margin="0,0,6,0">
+                        <TextBlock Text="{Binding StatusSummaryText}" Foreground="#BFD9FF" FontSize="11"/>
+                    </Border>
+                    <TextBlock Text="{Binding ZoomText}" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" FontSize="11" Margin="12,0,0,0"/>
+                </DockPanel>
+            </Expander.Header>
+            <Grid Margin="8">
+                <DataGrid Style="{StaticResource AnalyzerDataGridStyle}" AutoGenerateColumns="False" ItemsSource="{Binding StatusHistory}" FontSize="11">
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="Sev" Binding="{Binding Severity}" Width="55"/>
-                        <DataGridTextColumn Header="Code" Binding="{Binding Code}" Width="105"/>
+                        <DataGridTextColumn Header="Code" Binding="{Binding Code}" Width="130"/>
                         <DataGridTextColumn Header="Message" Binding="{Binding Message}" Width="*"/>
                         <DataGridTextColumn Header="Time" Binding="{Binding TimestampText}" Width="155"/>
                     </DataGrid.Columns>
                 </DataGrid>
             </Grid>
-        </Border>
+        </Expander>
     </Grid>
 </Window>
