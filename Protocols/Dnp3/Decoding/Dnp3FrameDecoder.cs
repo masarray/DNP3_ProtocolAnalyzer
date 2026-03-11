@@ -7,75 +7,117 @@ public sealed class Dnp3FrameDecoder : IFrameDecoder
 {
     public DecodedFrame Decode(PacketRecord packet)
     {
-        var summary = packet.Summary;
+        var parsed = Dnp3PayloadParser.Parse(packet.Payload);
+        bool unsolicitedHint = IsUnsolicited(parsed);
+
         return new DecodedFrame
         {
             TimestampText = packet.TimestampUtc.ToLocalTime().ToString("HH:mm:ss.fff"),
             Direction = packet.Direction,
-            Source = packet.Direction == "TX" ? "Master(1)" : "Relay(100)",
-            Destination = packet.Direction == "TX" ? "Relay(100)" : "Master(1)",
-            Transport = GuessTransport(summary),
-            ApplicationControl = GuessApplicationControl(summary),
-            FunctionCode = GuessFunctionCode(summary),
-            ObjectSummary = GuessObjectSummary(summary),
-            IinSummary = GuessIin(summary),
-            SemanticTag = GuessSemanticTag(summary),
+            Source = FormatEndpoint(parsed.Source),
+            Destination = FormatEndpoint(parsed.Destination),
+            Transport = FormatTransport(parsed.ApplicationControl),
+            ApplicationControl = FormatApplicationControl(parsed.ApplicationControl),
+            FunctionCode = Dnp3FunctionCodeFormatter.Format(parsed.FunctionCode, unsolicitedHint),
+            ObjectSummary = FormatObjectSummary(parsed),
+            IinSummary = FormatIin(parsed.Iin),
+            SemanticTag = BuildSemanticTag(parsed, packet.Summary),
             RawHex = BitConverter.ToString(packet.Payload).Replace("-", " "),
-            Summary = summary
+            Summary = BuildSummary(parsed, packet.Summary)
         };
     }
 
-    private static string GuessTransport(string summary)
+    private static bool IsUnsolicited(Dnp3ParsedFrame parsed)
     {
-        if (summary.Contains("unsolicited", StringComparison.OrdinalIgnoreCase)) return "FIR/FIN Seq 2";
-        if (summary.Contains("integrity", StringComparison.OrdinalIgnoreCase)) return "FIR/FIN Seq 1";
-        if (summary.Contains("confirm", StringComparison.OrdinalIgnoreCase)) return "FIR/FIN Seq 0";
-        return "Single Fragment";
+        return parsed.FunctionCode == 0x82
+            || (parsed.FunctionCode == 0x81 && parsed.ApplicationControl.HasValue && (parsed.ApplicationControl.Value & 0x20) != 0);
     }
 
-    private static string GuessApplicationControl(string summary)
+    private static string FormatEndpoint(ushort address)
     {
-        if (summary.Contains("unsolicited", StringComparison.OrdinalIgnoreCase)) return "UNS | CON";
-        if (summary.Contains("response", StringComparison.OrdinalIgnoreCase)) return "FIR | FIN | CON";
-        if (summary.Contains("enable", StringComparison.OrdinalIgnoreCase)) return "FIR | FIN";
-        return "FIR | FIN | SEQ";
+        return address == 0 ? "Addr ?" : $"Addr {address}";
     }
 
-    private static string GuessFunctionCode(string summary)
+    private static string FormatTransport(byte? appControl)
     {
-        if (summary.Contains("integrity poll request", StringComparison.OrdinalIgnoreCase)) return "READ";
-        if (summary.Contains("integrity poll response", StringComparison.OrdinalIgnoreCase)) return "RESPONSE";
-        if (summary.Contains("unsolicited", StringComparison.OrdinalIgnoreCase)) return "UNSOLICITED_RESPONSE";
-        if (summary.Contains("enable unsolicited", StringComparison.OrdinalIgnoreCase)) return "ENABLE_UNSOLICITED";
-        if (summary.Contains("confirm", StringComparison.OrdinalIgnoreCase)) return "CONFIRM";
-        if (summary.Contains("operate", StringComparison.OrdinalIgnoreCase)) return "OPERATE";
-        return "APPLICATION_FRAGMENT";
+        if (!appControl.HasValue)
+        {
+            return "Transport n/a";
+        }
+
+        bool fir = (appControl.Value & 0x80) != 0;
+        bool fin = (appControl.Value & 0x40) != 0;
+        int seq = appControl.Value & 0x0F;
+        return $"{(fir ? "FIR" : "-")}/{(fin ? "FIN" : "-")} Seq {seq}";
     }
 
-    private static string GuessObjectSummary(string summary)
+    private static string FormatApplicationControl(byte? appControl)
     {
-        if (summary.Contains("binary event", StringComparison.OrdinalIgnoreCase)) return "G2V2 Binary Event";
-        if (summary.Contains("binary input", StringComparison.OrdinalIgnoreCase)) return "G1V2 Binary Input";
-        if (summary.Contains("analog", StringComparison.OrdinalIgnoreCase)) return "G30V2 Analog Input";
-        if (summary.Contains("classes 1/2/3", StringComparison.OrdinalIgnoreCase)) return "G60V2/G60V3/G60V4 Class Enable";
-        if (summary.Contains("class 0", StringComparison.OrdinalIgnoreCase)) return "G60V1 Class 0 Request";
-        if (summary.Contains("crob", StringComparison.OrdinalIgnoreCase)) return "G12V1 CROB";
-        return "Object mapping pending";
+        if (!appControl.HasValue)
+        {
+            return "App Ctrl n/a";
+        }
+
+        bool fir = (appControl.Value & 0x80) != 0;
+        bool fin = (appControl.Value & 0x40) != 0;
+        bool con = (appControl.Value & 0x20) != 0;
+        bool uns = (appControl.Value & 0x10) != 0;
+        int seq = appControl.Value & 0x0F;
+        return $"{(fir ? "FIR" : "-")} | {(fin ? "FIN" : "-")} | {(con ? "CON" : "-")} | {(uns ? "UNS" : "-")} | SEQ {seq}";
     }
 
-    private static string GuessIin(string summary)
+    private static string FormatObjectSummary(Dnp3ParsedFrame parsed)
     {
-        if (summary.Contains("unsolicited", StringComparison.OrdinalIgnoreCase)) return "IIN1.7 DEVICE_RESTART";
-        if (summary.Contains("response", StringComparison.OrdinalIgnoreCase)) return "IIN clear";
-        return "n/a";
+        if (!parsed.ObjectGroup.HasValue || !parsed.ObjectVariation.HasValue)
+        {
+            return "Object n/a";
+        }
+
+        string qualifierText = parsed.Qualifier.HasValue ? $" Q{parsed.Qualifier.Value:X2}" : string.Empty;
+        return $"G{parsed.ObjectGroup.Value}V{parsed.ObjectVariation.Value}{qualifierText}";
     }
 
-    private static string GuessSemanticTag(string summary)
+    private static string FormatIin(ushort? iin)
     {
-        if (summary.Contains("integrity", StringComparison.OrdinalIgnoreCase)) return "Integrity Poll";
-        if (summary.Contains("unsolicited", StringComparison.OrdinalIgnoreCase)) return "SOE / Event";
-        if (summary.Contains("operate", StringComparison.OrdinalIgnoreCase)) return "Control Lifecycle";
-        if (summary.Contains("enable", StringComparison.OrdinalIgnoreCase)) return "Startup Conditioning";
-        return "General DNP3";
+        if (!iin.HasValue)
+        {
+            return "n/a";
+        }
+
+        if (iin.Value == 0)
+        {
+            return "IIN clear";
+        }
+
+        var labels = new List<string>();
+        if ((iin.Value & 0x0080) != 0) labels.Add("DEVICE_RESTART");
+        if ((iin.Value & 0x0002) != 0) labels.Add("CLASS1_EVENTS");
+        if ((iin.Value & 0x0004) != 0) labels.Add("CLASS2_EVENTS");
+        if ((iin.Value & 0x0008) != 0) labels.Add("CLASS3_EVENTS");
+        if ((iin.Value & 0x2000) != 0) labels.Add("NEED_TIME");
+        return labels.Count == 0 ? $"IIN 0x{iin.Value:X4}" : string.Join(", ", labels);
+    }
+
+    private static string BuildSemanticTag(Dnp3ParsedFrame parsed, string fallbackSummary)
+    {
+        return Dnp3FunctionCodeFormatter.Format(parsed.FunctionCode, IsUnsolicited(parsed)) switch
+        {
+            "READ" => "Integrity / Polling",
+            "RESPONSE" => "Solicited Response",
+            "UNSOLICITED_RESPONSE" => "SOE / Event",
+            "ENABLE_UNSOLICITED" => "Startup Conditioning",
+            "OPERATE" => "Control Lifecycle",
+            "CONFIRM" => "Confirm / Ack",
+            _ => fallbackSummary.Contains("time", StringComparison.OrdinalIgnoreCase) ? "Time Sync" : "General DNP3"
+        };
+    }
+
+    private static string BuildSummary(Dnp3ParsedFrame parsed, string fallbackSummary)
+    {
+        string function = Dnp3FunctionCodeFormatter.Format(parsed.FunctionCode, IsUnsolicited(parsed));
+        string objectText = FormatObjectSummary(parsed);
+        return parsed.HasLinkHeader
+            ? $"{function} {objectText} | Src {parsed.Source} Dst {parsed.Destination} | {parsed.DecodeNote}"
+            : fallbackSummary;
     }
 }
